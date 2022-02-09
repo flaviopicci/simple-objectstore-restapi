@@ -34,6 +34,8 @@ const separator = byte('\n')
 // 2. move the temp file and overwrite the actual bucket file
 // 3. update bucket's objects metadata if needed
 // This mitigates the possibility of data corruption or mismatch between data on file and metadata in memory
+// Because of this Store and deletion times depend on the size of the bucket (the whole bucket is copied).
+// The retrieving time is bucket size independent because of the metadata stored in maps in memory.
 type FileStore struct {
 	storePath string
 	mu        sync.RWMutex               // Global mutex to handle concurrent access to buckets metadata map

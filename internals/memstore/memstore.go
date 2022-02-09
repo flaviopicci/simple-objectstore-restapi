@@ -4,7 +4,7 @@ import "sync"
 
 // MemStore implements ObjectStore and stores objects in memory.
 // It stores the objects as strings in a matrix [bucketId][objId].
-// Storing, retrieving and deletion time are O(1)
+// Storing, retrieving and deletion times do not depend on the number of buckets and objects.
 type MemStore struct {
 	mu      sync.RWMutex                 // Mutex used to modify the buckets data
 	buckets map[string]map[string]string // Map where objects are actually stored

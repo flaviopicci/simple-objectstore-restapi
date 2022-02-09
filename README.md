@@ -14,7 +14,7 @@ Or they can be made up of numbers, lowercase letters, underscores and dashes.
 `PUT /objects/<bucketId>/<objId>`
 
 Stores an object in a bucket, the object data is the content of the body of the request (the `Content-Type` of the request must be `text/plain`).
-The service replies with a `201` on object creation or a `200` on object replacement and .
+The service replies with a `201` on object creation or a `200` on object replacement and the object ID in the body.
 
 If the bucket does not exist it is created. If the object is already present, it is replaced.
 
@@ -82,3 +82,10 @@ curl -v -X DELETE http://localhost:8080/objects/bucx/objy
 < HTTP/1.1 200 OK
 ...
 ```
+---
+
+### TODOs
+
+Store and retrieval performances may be increased by passing to the Store and Retrieve functions the http request and response bodies 
+as io.Reader and io.Writer instead of bytes arrays as it is now.
+This would avoid a copy of the data in an intermediate buffer and may increase performances in case the objects are large.
