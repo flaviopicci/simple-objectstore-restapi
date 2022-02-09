@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
 	"io"
@@ -26,6 +27,10 @@ type ObjectStore interface {
 	Store(obj []byte, objId, bucketId string) (bool, error)
 	Retrieve(objId, bucketId string) ([]byte, bool, error)
 	Delete(objId, bucketId string) (bool, error)
+}
+
+type storedResponse struct {
+	Id string `json:"id"`
 }
 
 // Handler is the
@@ -60,13 +65,21 @@ func (h *Handler) HandleStore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error storing object: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	resBody, err := json.Marshal(storedResponse{Id: objectId})
+	if err != nil {
+		http.Error(w, "Error marshalling response"+err.Error(), http.StatusInternalServerError)
+	}
+	w.Header().Set("Content-Type", "application/json")
+
 	if replaced {
 		// The exercise said to return a 201, but, in case the object was replaced,
-		// a 200/204 might be a better status code
+		// a 200 might be a better status code
 		w.WriteHeader(http.StatusOK)
 	} else {
 		w.WriteHeader(http.StatusCreated)
 	}
+	_, _ = w.Write(resBody)
 }
 
 func (h *Handler) HandleRetrieve(w http.ResponseWriter, r *http.Request) {

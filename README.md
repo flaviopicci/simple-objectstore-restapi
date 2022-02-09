@@ -14,7 +14,7 @@ Or they can be made up of numbers, lowercase letters, underscores and dashes.
 `PUT /objects/<bucketId>/<objId>`
 
 Stores an object in a bucket, the object data is the content of the body of the request (the `Content-Type` of the request must be `text/plain`).
-The service replies with a `201` on object creation or a `200` on object replacement.
+The service replies with a `201` on object creation or a `200` on object replacement and .
 
 If the bucket does not exist it is created. If the object is already present, it is replaced.
 
@@ -61,6 +61,7 @@ curl -v -d 'object data' -H "Content-Type: text/plain" -X PUT http://localhost:8
 ...
 < HTTP/1.1 201 Created
 ...
+{"id":"objy"}
 ```
 
 Retrieve it:
