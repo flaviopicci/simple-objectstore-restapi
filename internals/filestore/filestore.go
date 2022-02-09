@@ -18,36 +18,55 @@ import (
 const numMutexes = 100
 const separator = byte('\n')
 
+// FileStore implements ObjectStore and stores objects in files on disk.
+// It uses one file per bucket named <bucketId>.dat and in each file it stores data with the following format:
+// <objId> <obj len in bytes> <obj data>\n
+// In order to retrieve data faster, FileStore holds some metadata about buckets and objects in memory.
+// In particular, it retains each object offset in its bucket file and its size in bytes.
+//
+// To allow concurrent access to multiple buckets, it is used an array of `numMutexes` mutexes. Instead of having
+// a mutex per bucket, these mutexes are in a fixed number to avoid:
+// 1. to have too many mutexes which can use a lot of memory and decrease performances
+// 2. to have maximum 2*numMutexes open files at the same time and avoid errors related to too many open files
+//
+// Every change to a bucket file is performed in three steps
+// 1. copy old data to a temporary file writing new data if needed (like add or replace and object)
+// 2. move the temp file and overwrite the actual bucket file
+// 3. update bucket's objects metadata if needed
+// This mitigates the possibility of data corruption or mismatch between data on file and metadata in memory
 type FileStore struct {
 	storePath string
-	mu        sync.RWMutex
-	buckets   map[string]*bucketMetadata
-	bucketsMu [numMutexes]sync.RWMutex
+	mu        sync.RWMutex               // Global mutex to handle concurrent access to buckets metadata map
+	buckets   map[string]*bucketMetadata // Map to store each bucket metadata
+	bucketsMu [numMutexes]sync.RWMutex   // Array of numMutexes mutexes to handle concurrent access to each bucket
 }
 
 type bucketMetadata struct {
 	filePath   string
-	muIndex    uint32
-	lastObject *objectMetadata
-	objects    map[string]*objectMetadata
+	muIndex    uint32                     // Index of the mutex in the bucketsMu
+	lastObject *objectMetadata            // Last object in the buckets file
+	objects    map[string]*objectMetadata // Map to store each object metadata
 }
 
 type objectMetadata struct {
-	offset   int64
-	size     int64
-	metaSize int64
-	prev     *objectMetadata
-	next     *objectMetadata
+	offset   int64           // Offset in bytes of the object within the bucket file
+	size     int64           // Size in bytes of the object
+	metaSize int64           // Size of the object metadata (<objId> <obj size>)
+	prev     *objectMetadata // Previous object in the bucket file
+	next     *objectMetadata // Following object in the bucket file
 }
 
 func NewStore(storePath string) (*FileStore, error) {
 	storePath = filepath.Clean(storePath)
+	// Check store folder
 	if _, err := os.Stat(storePath); err != nil {
 		if os.IsNotExist(err) {
 			return nil, errors.New("store folder does not exist")
 		}
 		return nil, errors.New("cannot access store folder: " + err.Error())
 	}
+
+	// Load metadata of existing buckets
 	buckets, err := loadDataFromDisk(storePath)
 	if err != nil {
 		return nil, err
@@ -59,11 +78,15 @@ func NewStore(storePath string) (*FileStore, error) {
 	return &store, nil
 }
 
+// Store stores the given object with ID `objId` in bucket `bucketId`.
+// Returns whether the object has been replaced along with any error encountered.
+// If `bucketId` is a new bucket it gets created.
 func (f *FileStore) Store(obj []byte, objId, bucketId string) (bool, error) {
 	f.mu.Lock()
 
 	bucketMeta, bucketOk := f.buckets[bucketId]
 	if !bucketOk {
+		// New bucket, create its metadata
 		muIndex, err := bucketIdToMutexIndex(bucketId)
 		if err != nil {
 			f.mu.Unlock()
@@ -76,7 +99,7 @@ func (f *FileStore) Store(obj []byte, objId, bucketId string) (bool, error) {
 			objects:  make(map[string]*objectMetadata),
 		}
 		f.buckets[bucketId] = bucketMeta
-		// create bucket file
+		// and create new empty bucket file
 		bf, err := os.OpenFile(bucketFilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			return false, err
@@ -159,6 +182,8 @@ func (f *FileStore) Store(obj []byte, objId, bucketId string) (bool, error) {
 	return objOk, nil
 }
 
+// Retrieve retrieves the object `objId` in bucket `bucketId`.
+// It returns the object in bytes (or nil if it was not found), whether it has been found or not, along with any error.
 func (f *FileStore) Retrieve(objId, bucketId string) ([]byte, bool, error) {
 	f.mu.RLock()
 
@@ -194,6 +219,9 @@ func (f *FileStore) Retrieve(objId, bucketId string) ([]byte, bool, error) {
 	return obj, true, nil
 }
 
+// Delete deletes the object `objId` in bucket `bucketId`. If the bucket is emptied it removes both the bucket file
+// and metadata from the bucket metadata map.
+// It returns whether the object has been deleted or not along with any error.
 func (f *FileStore) Delete(objId, bucketId string) (bool, error) {
 	f.mu.Lock()
 
@@ -263,7 +291,7 @@ func (f *FileStore) Delete(objId, bucketId string) (bool, error) {
 
 // appendObjectToBucketFile apends the object `obj` to the end of the file `file`.
 // If `offset` parameter is < 0 calculate and return the new object offset.
-// Returns the actual object offset and, its metadata and object length along with any error.
+// Returns the actual object offset and its metadata and object length along with any error.
 func appendObjectToBucketFile(obj []byte, objId string, file *os.File, offset int64) (int64, int64, int64, error) {
 	if offset < 0 {
 		f, err := file.Stat()
@@ -288,7 +316,7 @@ func appendObjectToBucketFile(obj []byte, objId string, file *os.File, offset in
 
 // replaceObjectInBucketFile replaces an object `obj` in the position defined by the `objMeta`
 // by copying data from original bucket file `bf` to temporary file `tf`.
-// If the new object is nil, this function deletes the object at the position defined by the `objMeta`
+// If the new object is nil, this function deletes the object at the position defined by the `objMeta`.
 // Returns the new metadata and object length along with any error encountered in the process.
 func replaceObjectInBucketFile(obj []byte, objId string, objMeta *objectMetadata, bfName string, file *os.File) (int64, int64, error) {
 	bf, err := os.Open(bfName)
@@ -434,6 +462,7 @@ func getObjectsMetadata(bf *os.File) (map[string]*objectMetadata, *objectMetadat
 	return objectsMeta, lastObjMeta, nil
 }
 
+// bucketIdToMutexIndex calculates the index in the buckets mutexes array based on a hash of the bucket ID
 func bucketIdToMutexIndex(bucketId string) (uint32, error) {
 	f := fnv.New32()
 	n, err := f.Write([]byte(bucketId))

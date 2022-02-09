@@ -2,9 +2,12 @@ package memstore
 
 import "sync"
 
+// MemStore implements ObjectStore and stores objects in memory.
+// It stores the objects as strings in a matrix [bucketId][objId].
+// Storing, retrieving and deletion time are O(1)
 type MemStore struct {
-	mu      sync.RWMutex
-	buckets map[string]map[string]string
+	mu      sync.RWMutex                 // Mutex used to modify the buckets data
+	buckets map[string]map[string]string // Map where objects are actually stored
 }
 
 func NewStore() *MemStore {
@@ -32,6 +35,7 @@ func (s *MemStore) Store(obj []byte, objId, bucketId string) (bool, error) {
 func (s *MemStore) Retrieve(objId, bucketId string) ([]byte, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	bucket, ok := s.buckets[bucketId]
 	if !ok {
 		return nil, false, nil

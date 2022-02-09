@@ -20,6 +20,8 @@ const defaultMaxMem = 10 << 20 // 10MiB
 //
 // Delete deletes the object identified by objId and bucketId. It returns whether the object was stored
 // and it was actually deleted, along with any error encountered in the process.
+//
+// NOTE: both objId and bucketId will match this regex `[a-z0-9_-]+`
 type ObjectStore interface {
 	Store(obj []byte, objId, bucketId string) (bool, error)
 	Retrieve(objId, bucketId string) ([]byte, bool, error)
