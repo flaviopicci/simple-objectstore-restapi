@@ -289,7 +289,7 @@ func (f *FileStore) Delete(objId, bucketId string) (bool, error) {
 	return true, nil
 }
 
-// appendObjectToBucketFile apends the object `obj` to the end of the file `file`.
+// appendObjectToBucketFile appends the object `obj` to the end of the file `file`.
 // If `offset` parameter is < 0 calculate and return the new object offset.
 // Returns the actual object offset and its metadata and object length along with any error.
 func appendObjectToBucketFile(obj []byte, objId string, file *os.File, offset int64) (int64, int64, int64, error) {
