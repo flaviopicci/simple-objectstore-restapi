@@ -234,11 +234,11 @@ func (f *FileStore) Delete(objId, bucketId string) (bool, error) {
 	}
 	bucketMu := &f.bucketsMu[bucketMeta.muIndex]
 	bucketMu.Lock()
-	f.mu.Unlock()
 	defer bucketMu.Unlock()
 
 	objMeta, objOk := bucketMeta.objects[objId]
 	if !objOk {
+		f.mu.Unlock()
 		return false, nil
 	}
 
@@ -247,8 +247,11 @@ func (f *FileStore) Delete(objId, bucketId string) (bool, error) {
 		if err := os.Remove(bucketMeta.filePath); err == nil {
 			delete(f.buckets, bucketId)
 		}
+		f.mu.Unlock()
 		return true, nil
 	}
+
+	f.mu.Unlock()
 
 	// temporary bucket file to write changes to
 	tmpFile, err := ioutil.TempFile("", bucketId+"_*.dat")
